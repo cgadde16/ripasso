@@ -88,7 +88,19 @@ textarea{min-height:220px;font-size:.95rem;resize:vertical}
 .progress{height:6px;border-radius:99px;background:var(--line);overflow:hidden}
 .progress span{display:block;height:100%;background:var(--accent);transition:width .25s}
 .count{display:flex;justify-content:space-between;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
-.scene{perspective:1200px}
+.scene{perspective:1200px;position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none;transition:transform .2s ease,opacity .2s ease}
+.scene.dragging{transition:none}
+.tag{position:absolute;top:12px;z-index:2;padding:4px 12px;border-radius:99px;font-size:.78rem;font-weight:600;background:var(--surface);border:2px solid currentColor;opacity:0;transition:opacity .12s;pointer-events:none}
+.tag.left{right:12px;color:var(--l2)}
+.tag.right{left:12px;color:var(--accent)}
+.scene[data-dir="left"] .tag.left,.scene[data-dir="right"] .tag.right{opacity:1}
+.swipehint{font-size:.75rem;color:var(--muted);text-align:center}
+/* study screen: progress on top, card centred, answer buttons on the bottom edge */
+#app.studying{box-sizing:border-box;padding-block:8px 14px;min-height:calc(100vh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));min-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))}
+#app.studying #view{flex:1;min-height:0}
+.mid{flex:1;display:flex;flex-direction:column;justify-content:center;gap:10px;min-height:0}
+.mid .card{min-height:min(48vh,420px)}
+.bottom{display:flex;flex-direction:column;gap:8px}
 .card{position:relative;width:100%;min-height:300px;border:0;padding:0;transform-style:preserve-3d;transition:transform .45s cubic-bezier(.2,.7,.2,1)}
 .card.flipped{transform:rotateY(180deg)}
 .face{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:28px 22px;text-align:center;background:var(--surface);border:1px solid var(--line);border-bottom:5px solid var(--card-edge);border-radius:20px;backface-visibility:hidden;-webkit-backface-visibility:hidden;box-sizing:border-box}
@@ -105,7 +117,7 @@ textarea{min-height:220px;font-size:.95rem;resize:vertical}
 .result b{display:block;font-family:var(--display);font-size:1.5rem;color:var(--ink)}
 .kbd{font-size:.75rem;color:var(--muted);text-align:center}
 @media (hover:none){.kbd{display:none}}
-@media (prefers-reduced-motion:reduce){.card,.progress span{transition:none}}
+@media (prefers-reduced-motion:reduce){.card,.progress span,.scene{transition:none}}
 </style>
 </head>
 <body>
@@ -320,9 +332,10 @@ function viewStudy() {
   const s = S.session, d = S.decks.get(s.deckId);
   $title.textContent = d.name; $back.hidden = false;
   if (!s.queue.length) {
-    return `<div class="empty"><h2>Runde geschafft</h2><p class="muted">${s.answered} Antworten in dieser Runde.</p></div>
+    return `<div class="empty"><h2>Runde geschafft</h2><p class="muted">${s.answered} Antworten${s.skipped ? `, ${s.skipped} übersprungen` : ""} in dieser Runde.</p></div>
       <div class="result">${RATES.map((R, i) => `<div style="--c:${R.color}"><b>${s.tally[i]}</b>${R.name}</div>`).join("")}</div>
-      <button class="btn primary block" data-act="toDeck">Zurück zum Stapel</button>`;
+      <button class="btn primary block" data-act="toDeck">Zurück zum Stapel</button>
+      ${s.history.length ? `<button class="btn block" data-act="undo">Letzte Karte zurückholen</button>` : ""}`;
   }
   const c = d.cards.find(x => x.id === s.queue[0]);
   if (!c) { s.queue.shift(); return viewStudy(); }
@@ -333,12 +346,17 @@ function viewStudy() {
       <div class="progress"><span style="width:${pct}%"></span></div>
       <div class="count"><span>${done} / ${s.total}</span><span>Stufe: ${LEVELS[level(c)].name}</span></div>
     </div>
-    <div class="scene"><button class="card ${s.flipped ? "flipped" : ""}" data-act="flip" aria-label="Karte umdrehen">
+    <div class="mid">
+    <div class="scene"><span class="tag left">Stufe bleibt</span><span class="tag right">Letzte zurück</span><button class="card ${s.flipped ? "flipped" : ""}" data-act="flip" aria-label="Karte umdrehen">
       <div class="face front"><span class="lang">Frage</span><div class="word">${esc(a)}</div><div class="hint">Tippen zum Umdrehen</div></div>
       <div class="face back"><span class="lang">Antwort</span><div class="word">${esc(b)}</div><div class="hint">${esc(a)}</div></div>
     </button></div>
+    <div class="swipehint">← wischen: Stufe bleibt · wischen →: letzte Karte zurück</div>
+    </div>
+    <div class="bottom">
     <div class="rates">${RATES.map((R, i) => `<button class="rate" style="--c:${R.color}" data-act="rate" data-r="${i}">${R.name}<small>${R.sub}</small></button>`).join("")}</div>
-    <div class="kbd">Leertaste: umdrehen · 1–4: bewerten</div>`;
+    <div class="kbd">Leertaste: umdrehen · 1–4: bewerten · ←/→: wie wischen</div>
+    </div>`;
 }
 
 function viewBackup() {
@@ -355,6 +373,7 @@ function viewBackup() {
 function render() {
   if ((S.view === "deck" || S.view === "add" || S.view === "rename") && !S.decks.has(S.deckId)) S.view = "home";
   if (S.view === "study" && (!S.session || !S.decks.has(S.session.deckId))) S.view = "home";
+  document.getElementById("app").classList.toggle("studying", S.view === "study" && !!S.session && S.session.queue.length > 0);
   $view.innerHTML = S.view === "home" ? viewHome() : S.view === "deck" ? viewDeck() : S.view === "study" ? viewStudy() : S.view === "backup" ? viewBackup() : viewImport();
   const txt = document.getElementById("txt");
   if (txt) {
@@ -379,13 +398,14 @@ function startStudy(mode) {
   else if (mode === "levels") cards = cards.filter(c => S.levelSel.has(level(c)));
   if (!cards.length) return;
   const queue = shuffle(cards.map(c => c.id));
-  S.session = { deckId: S.deckId, queue, total: queue.length, flipped: false, tally: [0, 0, 0, 0], answered: 0 };
+  S.session = { deckId: S.deckId, queue, total: queue.length, flipped: false, tally: [0, 0, 0, 0], answered: 0, skipped: 0, history: [] };
   go("study");
 }
 
 function rate(r) {
   const s = S.session, d = S.decks.get(s.deckId);
   const c = d.cards.find(x => x.id === s.queue[0]);
+  if (c) snapshot(s, c);
   s.queue.shift();
   if (c) {
     const now = Date.now();
@@ -398,6 +418,76 @@ function rate(r) {
   s.flipped = false;
   render();
 }
+
+/* Remember the session and the card before an answer or skip, so a swipe right can undo it. */
+function snapshot(s, c) {
+  s.history.push({ id: c.id, box: c.box, due: c.due, queue: s.queue.slice(), total: s.total,
+                   tally: s.tally.slice(), answered: s.answered, skipped: s.skipped });
+  if (s.history.length > 300) s.history.shift();
+}
+
+// swipe left: next card, level and due date stay as they are
+function skip() {
+  const s = S.session, d = S.decks.get(s.deckId);
+  const c = d.cards.find(x => x.id === s.queue[0]);
+  if (!c) { render(); return; }
+  snapshot(s, c);
+  s.queue.shift();
+  s.skipped++;
+  s.flipped = false;
+  render();
+}
+
+// swipe right: bring back the previous card and undo what happened to it
+function back() {
+  const s = S.session, h = s.history.pop();
+  if (!h) { render(); return; }
+  const d = S.decks.get(s.deckId), c = d.cards.find(x => x.id === h.id);
+  if (c && (c.box !== h.box || c.due !== h.due)) { c.box = h.box; c.due = h.due; saveDeck(s.deckId); }
+  Object.assign(s, { queue: h.queue, total: h.total, tally: h.tally, answered: h.answered, skipped: h.skipped, flipped: false });
+  render();
+}
+
+/* ---------- swipe on the card ---------- */
+let drag = null, lastSwipe = 0;
+$view.addEventListener("pointerdown", e => {
+  const scene = e.target.closest(".scene");
+  if (!scene || S.view !== "study" || (e.pointerType === "mouse" && e.button !== 0)) return;
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, moved: false, scene };
+});
+window.addEventListener("pointermove", e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved) {
+    if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; } // vertical scroll
+    if (Math.abs(dx) < 10) return;
+    drag.moved = true;
+    drag.scene.classList.add("dragging");
+    try { drag.scene.setPointerCapture(e.pointerId); } catch {}
+  }
+  drag.dx = dx;
+  const th = Math.min(90, drag.scene.offsetWidth * 0.22);
+  drag.scene.style.transform = `translateX(${dx}px) rotate(${dx / 30}deg)`;
+  drag.scene.dataset.dir = dx < -th ? "left" : dx > th && S.session.history.length ? "right" : "";
+});
+function endDrag(e, cancelled) {
+  if (!drag || e.pointerId !== drag.id) return;
+  const { dx, moved, scene } = drag;
+  drag = null;
+  if (!moved) return; // a tap: the click handler flips the card
+  lastSwipe = Date.now();
+  scene.classList.remove("dragging");
+  const th = Math.min(90, scene.offsetWidth * 0.22);
+  const dir = cancelled ? 0 : dx < -th ? -1 : dx > th && S.session.history.length ? 1 : 0;
+  if (!dir) { scene.style.transform = ""; scene.dataset.dir = ""; return; }
+  const done = dir < 0 ? skip : back;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { done(); return; }
+  scene.style.transform = `translateX(${dir * 130}%) rotate(${dir * 14}deg)`;
+  scene.style.opacity = "0";
+  setTimeout(done, 180);
+}
+window.addEventListener("pointerup", e => endDrag(e, false));
+window.addEventListener("pointercancel", e => endDrag(e, true));
 
 /* ---------- events ---------- */
 $back.addEventListener("click", () => {
@@ -445,7 +535,8 @@ $view.addEventListener("click", e => {
     case "add": go("add"); break;
     case "rename": go("rename"); break;
     case "toDeck": go("deck"); break;
-    case "flip": S.session.flipped = !S.session.flipped; el.classList.toggle("flipped", S.session.flipped); break;
+    case "undo": back(); break;
+    case "flip": if (Date.now() - lastSwipe < 400) break; S.session.flipped = !S.session.flipped; el.classList.toggle("flipped", S.session.flipped); break;
     case "rate": rate(+el.dataset.r); break;
     case "delcard": {
       const id = el.dataset.id;
@@ -475,8 +566,11 @@ $view.addEventListener("click", e => {
 });
 
 document.addEventListener("keydown", e => {
-  if (S.view !== "study" || !S.session || !S.session.queue.length) return;
+  if (S.view !== "study" || !S.session) return;
   if (e.target.matches && e.target.matches("input,textarea")) return;
+  if (e.key === "ArrowRight") { e.preventDefault(); back(); return; }
+  if (!S.session.queue.length) return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); skip(); return; }
   if (e.key === " " || e.key === "Enter") {
     e.preventDefault();
     S.session.flipped = !S.session.flipped;
