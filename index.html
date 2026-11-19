@@ -92,10 +92,20 @@ textarea{min-height:220px;font-size:.95rem;resize:vertical}
 .scene{perspective:1200px;position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none;transition:transform .2s ease,opacity .2s ease}
 .scene.dragging{transition:none}
 .tag{position:absolute;top:12px;z-index:2;padding:4px 12px;border-radius:99px;font-size:.78rem;font-weight:600;background:var(--surface);border:2px solid currentColor;opacity:0;transition:opacity .12s;pointer-events:none}
-.tag.left{right:12px;color:var(--l2)}
+.tag.left{right:58px;color:var(--l2)}
 .tag.right{left:12px;color:var(--accent)}
 .scene[data-dir="left"] .tag.left,.scene[data-dir="right"] .tag.right{opacity:1}
 .swipehint{font-size:.75rem;color:var(--muted);text-align:center}
+.more{position:absolute;top:6px;right:6px;z-index:3;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;color:var(--muted)}
+.more:hover,.more[aria-expanded="true"]{background:var(--line);color:var(--ink)}
+.menu{position:absolute;top:54px;right:8px;z-index:4;min-width:230px;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgb(0 0 0 / .18)}
+.menu button{text-align:left;padding:12px 14px;min-height:46px;font-weight:500}
+.menu button+button{border-top:1px solid var(--line)}
+.menu button:hover{background:var(--bg)}
+.menu .warn{color:var(--l1);font-weight:600}
+.item.off .txt{opacity:.5}
+.item.off .txt small::after{content:" · ausgeblendet"}
+.show{min-height:44px;padding:0 10px;color:var(--accent);font-weight:600;font-size:.85rem}
 /* study screen: progress on top, card centred, answer buttons on the bottom edge */
 #app.studying{box-sizing:border-box;padding-block:8px 14px;min-height:calc(100vh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));min-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))}
 #app.studying #view{flex:1;min-height:0}
@@ -134,7 +144,7 @@ textarea{min-height:220px;font-size:.95rem;resize:vertical}
 
 <script>
 (() => {
-const VERSION = "3";
+const VERSION = "4";
 const DAY = 86400000;
 const INTERVALS = [0, 1, 2, 4, 8, 16, 32]; // days until next review, per box
 const LEVELS = [
@@ -249,7 +259,8 @@ function parse(text, swap) {
 }
 
 /* ---------- views ---------- */
-function levelCounts(d) { const n = [0, 0, 0, 0, 0]; d.cards.forEach(c => n[level(c)]++); return n; }
+const active = d => d.cards.filter(c => !c.hidden); // cards marked "nicht relevant" never show up
+function levelCounts(d) { const n = [0, 0, 0, 0, 0]; active(d).forEach(c => n[level(c)]++); return n; }
 function barHTML(n, total) {
   if (!total) return '<div class="bar"></div>';
   return '<div class="bar">' + n.map((v, i) => v ? `<span style="width:${(v / total) * 100}%;background:${LEVELS[i].color}"></span>` : "").join("") + "</div>";
@@ -268,11 +279,11 @@ function viewHome() {
     </div>`;
   }
   return decks.map(([id, d]) => {
-    const n = levelCounts(d), due = d.cards.filter(c => isDue(c, now)).length;
+    const n = levelCounts(d), act = active(d), due = act.filter(c => isDue(c, now)).length, off = d.cards.length - act.length;
     return `<button class="deck" data-act="open" data-id="${id}">
       <h2>${esc(d.name)}</h2>
-      ${barHTML(n, d.cards.length)}
-      <div class="meta"><span>${d.cards.length} Karten · ${n[4]} sicher</span>${due ? `<span class="due">${due} fällig</span>` : "<span>alles erledigt</span>"}</div>
+      ${barHTML(n, act.length)}
+      <div class="meta"><span>${act.length} Karten · ${n[4]} sicher${off ? ` · ${off} ausgeblendet` : ""}</span>${due ? `<span class="due">${due} fällig</span>` : "<span>alles erledigt</span>"}</div>
     </button>`;
   }).join("") + `<button class="btn primary block" data-act="new">Neuer Stapel</button><button class="btn block" data-act="backup">Backup &amp; Übertragen</button><p class="preview" style="text-align:center;margin:0">Version ${VERSION}</p>`;
 }
@@ -280,12 +291,12 @@ function viewHome() {
 function viewDeck() {
   const d = S.decks.get(S.deckId);
   $title.textContent = d.name; $back.hidden = false;
-  const now = Date.now(), n = levelCounts(d), due = d.cards.filter(c => isDue(c, now)).length;
-  const selCount = d.cards.filter(c => S.levelSel.has(level(c))).length;
+  const now = Date.now(), n = levelCounts(d), act = active(d), due = act.filter(c => isDue(c, now)).length;
+  const selCount = act.filter(c => S.levelSel.has(level(c))).length, off = d.cards.length - act.length;
   const front = d.reverse ? "Rückseite" : "Vorderseite";
   return `
     <div class="stack">
-      ${barHTML(n, d.cards.length)}
+      ${barHTML(n, act.length)}
       <div class="legend">${LEVELS.map((L, i) => `<button class="chip" data-act="lvl" data-l="${i}" aria-pressed="${S.levelSel.has(i)}"><i style="background:${L.color}"></i><b>${n[i]}</b>${L.name}</button>`).join("")}</div>
       <p class="preview" style="margin:0">Tippe auf Stufen, um nur diese Karten zu lernen.</p>
     </div>
@@ -293,14 +304,15 @@ function viewDeck() {
       <button class="btn primary block" data-act="study" data-mode="due" ${due ? "" : "disabled"}>Fällige lernen (${due})</button>
       <div class="row">
         <button class="btn" data-act="study" data-mode="levels" ${selCount ? "" : "disabled"}>Auswahl (${selCount})</button>
-        <button class="btn" data-act="study" data-mode="all" ${d.cards.length ? "" : "disabled"}>Alle (${d.cards.length})</button>
+        <button class="btn" data-act="study" data-mode="all" ${act.length ? "" : "disabled"}>Alle (${act.length})</button>
       </div>
     </div>
     <label class="check"><input type="checkbox" id="rev" data-act="rev" ${d.reverse ? "checked" : ""}> Richtung umdrehen (zuerst die rechte Spalte zeigen)</label>
     <div class="stack">
-      <div class="label">Karten · zuerst gezeigt: ${front}</div>
-      <div class="list">${d.cards.map(c => {
+      <div class="label">Karten · zuerst gezeigt: ${front}${off ? ` · ${off} ausgeblendet (unten)` : ""}</div>
+      <div class="list">${[...act, ...d.cards.filter(c => c.hidden)].map(c => {
         const a = d.reverse ? c.b : c.f, b = d.reverse ? c.f : c.b, armed = S.armed === c.id;
+        if (c.hidden) return `<div class="item off"><span></span><div class="txt">${esc(a)}<small>${esc(b)}</small></div><button class="show" data-act="unhide" data-id="${c.id}">Einblenden</button></div>`;
         return `<div class="item"><span class="dot" style="background:${LEVELS[level(c)].color}"></span><div class="txt">${esc(a)}<small>${esc(b)}</small></div><button class="x ${armed ? "armed" : ""}" data-act="delcard" data-id="${c.id}" aria-label="Karte löschen">${armed ? "Löschen?" : "×"}</button></div>`;
       }).join("") || '<div class="item"><span></span><div class="txt muted">Keine Karten.</div><span></span></div>'}</div>
     </div>
@@ -334,13 +346,13 @@ function viewStudy() {
   const s = S.session, d = S.decks.get(s.deckId);
   $title.textContent = d.name; $back.hidden = false;
   if (!s.queue.length) {
-    return `<div class="empty"><h2>Runde geschafft</h2><p class="muted">${s.answered} Antworten${s.skipped ? `, ${s.skipped} übersprungen` : ""} in dieser Runde.</p></div>
+    return `<div class="empty"><h2>Runde geschafft</h2><p class="muted">${s.answered} Antworten${s.skipped ? `, ${s.skipped} übersprungen` : ""}${s.hiddenNow ? `, ${s.hiddenNow} ausgeblendet` : ""} in dieser Runde.</p></div>
       <div class="result">${RATES.map((R, i) => `<div style="--c:${R.color}"><b>${s.tally[i]}</b>${R.name}</div>`).join("")}</div>
       <button class="btn primary block" data-act="toDeck">Zurück zum Stapel</button>
       ${s.history.length ? `<button class="btn block" data-act="undo">Letzte Karte zurückholen</button>` : ""}`;
   }
   const c = d.cards.find(x => x.id === s.queue[0]);
-  if (!c) { s.queue.shift(); return viewStudy(); }
+  if (!c || c.hidden) { s.queue.shift(); return viewStudy(); }
   const a = d.reverse ? c.b : c.f, b = d.reverse ? c.f : c.b;
   const done = s.total - s.queue.length, pct = s.total ? (done / s.total) * 100 : 0;
   return `
@@ -349,7 +361,9 @@ function viewStudy() {
       <div class="count"><span>${done} / ${s.total}</span><span>Stufe: ${LEVELS[level(c)].name}</span></div>
     </div>
     <div class="mid">
-    <div class="scene"><span class="tag left">Stufe bleibt</span><span class="tag right">Letzte zurück</span><button class="card ${s.flipped ? "flipped" : ""}" data-act="flip" aria-label="Karte umdrehen">
+    <div class="scene"><span class="tag left">Stufe bleibt</span><span class="tag right">Letzte zurück</span>
+      <button class="more" data-act="menu" aria-label="Mehr Optionen" aria-expanded="${!!s.menu}"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4" cy="10" r="2"/><circle cx="10" cy="10" r="2"/><circle cx="16" cy="10" r="2"/></svg></button>
+      ${s.menu ? `<div class="menu" role="menu"><button class="warn" role="menuitem" data-act="hide">Nicht relevant – ausblenden</button><button role="menuitem" data-act="menuClose">Abbrechen</button></div>` : ""}<button class="card ${s.flipped ? "flipped" : ""}" data-act="flip" aria-label="Karte umdrehen">
       <div class="face front"><span class="lang">Frage</span><div class="word">${esc(a)}</div><div class="hint">Tippen zum Umdrehen</div></div>
       <div class="face back"><span class="lang">Antwort</span><div class="word">${esc(b)}</div><div class="hint">${esc(a)}</div></div>
     </button></div>
@@ -395,7 +409,7 @@ function createDeck(name, pairs) {
 
 function startStudy(mode) {
   const d = S.decks.get(S.deckId), now = Date.now();
-  let cards = d.cards;
+  let cards = active(d);
   if (mode === "due") cards = cards.filter(c => isDue(c, now));
   else if (mode === "levels") cards = cards.filter(c => S.levelSel.has(level(c)));
   if (!cards.length) return;
@@ -423,8 +437,8 @@ function rate(r) {
 
 /* Remember the session and the card before an answer or skip, so a swipe right can undo it. */
 function snapshot(s, c) {
-  s.history.push({ id: c.id, box: c.box, due: c.due, queue: s.queue.slice(), total: s.total,
-                   tally: s.tally.slice(), answered: s.answered, skipped: s.skipped });
+  s.history.push({ id: c.id, box: c.box, due: c.due, hidden: !!c.hidden, queue: s.queue.slice(), total: s.total,
+                   tally: s.tally.slice(), answered: s.answered, skipped: s.skipped, hiddenNow: s.hiddenNow || 0 });
   if (s.history.length > 300) s.history.shift();
 }
 
@@ -445,8 +459,28 @@ function back() {
   const s = S.session, h = s.history.pop();
   if (!h) { render(); return; }
   const d = S.decks.get(s.deckId), c = d.cards.find(x => x.id === h.id);
-  if (c && (c.box !== h.box || c.due !== h.due)) { c.box = h.box; c.due = h.due; saveDeck(s.deckId); }
-  Object.assign(s, { queue: h.queue, total: h.total, tally: h.tally, answered: h.answered, skipped: h.skipped, flipped: false });
+  if (c && (c.box !== h.box || c.due !== h.due || !!c.hidden !== !!h.hidden)) {
+    c.box = h.box; c.due = h.due;
+    if (h.hidden) c.hidden = true; else delete c.hidden;
+    saveDeck(s.deckId);
+  }
+  Object.assign(s, { queue: h.queue, total: h.total, tally: h.tally, answered: h.answered, skipped: h.skipped,
+                     hiddenNow: h.hiddenNow || 0, flipped: false, menu: false });
+  render();
+}
+
+// "nicht relevant": the card leaves this round and never shows up again (undo: swipe right)
+function hideCurrent() {
+  const s = S.session, d = S.decks.get(s.deckId);
+  const c = d.cards.find(x => x.id === s.queue[0]);
+  s.menu = false;
+  if (!c) { render(); return; }
+  snapshot(s, c);
+  c.hidden = true;
+  s.queue = s.queue.filter(id => id !== c.id);
+  s.hiddenNow = (s.hiddenNow || 0) + 1;
+  s.flipped = false;
+  saveDeck(s.deckId);
   render();
 }
 
@@ -455,6 +489,7 @@ let drag = null, lastSwipe = 0;
 $view.addEventListener("pointerdown", e => {
   const scene = e.target.closest(".scene");
   if (!scene || S.view !== "study" || (e.pointerType === "mouse" && e.button !== 0)) return;
+  if (e.target.closest(".more, .menu")) return;
   drag = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, moved: false, scene };
 });
 window.addEventListener("pointermove", e => {
@@ -538,7 +573,11 @@ $view.addEventListener("click", e => {
     case "rename": go("rename"); break;
     case "toDeck": go("deck"); break;
     case "undo": back(); break;
-    case "flip": if (Date.now() - lastSwipe < 400) break; S.session.flipped = !S.session.flipped; el.classList.toggle("flipped", S.session.flipped); break;
+    case "menu": S.session.menu = !S.session.menu; render(); break;
+    case "menuClose": S.session.menu = false; render(); break;
+    case "hide": hideCurrent(); break;
+    case "unhide": { const c = d.cards.find(x => x.id === el.dataset.id); if (c) { delete c.hidden; saveDeck(S.deckId); } render(); break; }
+    case "flip": if (Date.now() - lastSwipe < 400) break; if (S.session.menu) { S.session.menu = false; render(); break; } S.session.flipped = !S.session.flipped; el.classList.toggle("flipped", S.session.flipped); break;
     case "rate": rate(+el.dataset.r); break;
     case "delcard": {
       const id = el.dataset.id;

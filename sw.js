@@ -3,7 +3,7 @@
 // Icons and manifest: cache first, refreshed in the background.
 // Every fetch skips the browser's HTTP cache (GitHub Pages lets browsers keep files for 10 minutes,
 // which otherwise made the phone cache an old copy).
-const CACHE = "ripasso-v3";
+const CACHE = "ripasso-v4";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {
