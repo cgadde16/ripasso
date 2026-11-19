@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Ripasso">
+<meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f141c" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>Ripasso</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+/* Layout: one narrow phone column; a deck is a stack, studying is one big card with four answer buttons under the thumb. */
+:root{
+  --bg:#eef1f5; --surface:#ffffff; --ink:#152033; --muted:#5b6679; --line:#d8dee8;
+  --accent:#1d4ed8; --accent-ink:#ffffff; --card-edge:#f2c14e;
+  --l0:#9aa4b2; --l1:#d1495b; --l2:#e39b2d; --l3:#3a9d6e; --l4:#2563eb;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:14px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f141c; --surface:#182030; --ink:#e7ecf3; --muted:#9aa6b8; --line:#2a3445;
+  --accent:#7aa2ff; --accent-ink:#0b1220; --card-edge:#d9a93a;
+  --l0:#6e7a8c; --l1:#ef6b7b; --l2:#f0b04f; --l3:#52c08b; --l4:#6d9cff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141c; --surface:#182030; --ink:#e7ecf3; --muted:#9aa6b8; --line:#2a3445;
+  --accent:#7aa2ff; --accent-ink:#0b1220; --card-edge:#d9a93a;
+  --l0:#6e7a8c; --l1:#ef6b7b; --l2:#f0b04f; --l3:#52c08b; --l4:#6d9cff; color-scheme:dark}
+html,body{background:var(--bg);color:var(--ink)}
+body{font-family:var(--body);font-size:16px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+#app{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 40px;display:flex;flex-direction:column;gap:18px}
+.top{display:flex;align-items:center;gap:10px;min-height:44px}
+.top h1{font-family:var(--display);font-size:1.6rem;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-wrap:balance}
+.sync{font-size:.75rem;color:var(--muted);letter-spacing:.02em;white-space:nowrap}
+.sync.err{color:var(--l1)}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:46px;padding:0 18px;border-radius:12px;font-weight:600;background:var(--surface);border:1px solid var(--line)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--l1)}
+.btn.block{width:100%}
+.btn:disabled{opacity:.45;cursor:default}
+.back{min-height:44px;padding:0 6px 0 0;color:var(--accent);font-weight:600}
+.stack{display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>.btn{flex:1 1 140px}
+.label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+.deck{display:flex;flex-direction:column;gap:8px;text-align:left;width:100%;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.deck h2{font-family:var(--display);font-size:1.15rem;margin:0}
+.deck .meta{display:flex;justify-content:space-between;gap:8px;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.due{color:var(--accent);font-weight:600}
+.bar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--line)}
+.bar span{display:block;height:100%}
+.legend{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.chip{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:.72rem;color:var(--muted)}
+.chip b{font-family:var(--display);font-size:1.25rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.chip i{width:10px;height:10px;border-radius:50%;display:block}
+.chip[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.empty{padding:28px 20px;text-align:center;background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);display:flex;flex-direction:column;gap:12px;align-items:center}
+.empty h2{font-family:var(--display);margin:0;font-size:1.3rem}
+.empty p{margin:0;max-width:40ch}
+textarea,input[type=text]{width:100%;box-sizing:border-box;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+textarea{min-height:220px;font-size:.95rem;resize:vertical}
+.check{display:flex;align-items:center;gap:10px;min-height:44px}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+.preview{font-size:.85rem;color:var(--muted)}
+.list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.item{display:grid;grid-template-columns:10px 1fr auto;gap:12px;align-items:center;padding:10px 12px;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.item .dot{width:10px;height:10px;border-radius:50%}
+.item .txt{min-width:0;overflow-wrap:anywhere}
+.item .txt small{display:block;color:var(--muted)}
+.x{min-width:44px;min-height:44px;color:var(--muted);font-size:1.1rem}
+.x.armed{color:var(--l1);font-size:.8rem;font-weight:600}
+/* study */
+.progress{height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.progress span{display:block;height:100%;background:var(--accent);transition:width .25s}
+.count{display:flex;justify-content:space-between;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.scene{perspective:1200px}
+.card{position:relative;width:100%;min-height:300px;border:0;padding:0;transform-style:preserve-3d;transition:transform .45s cubic-bezier(.2,.7,.2,1)}
+.card.flipped{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:28px 22px;text-align:center;background:var(--surface);border:1px solid var(--line);border-bottom:5px solid var(--card-edge);border-radius:20px;backface-visibility:hidden;-webkit-backface-visibility:hidden;box-sizing:border-box}
+.face.back{transform:rotateY(180deg)}
+.face .word{font-family:var(--display);font-size:clamp(1.6rem,7vw,2.3rem);font-weight:600;line-height:1.15;overflow-wrap:anywhere;text-wrap:balance}
+.face .hint{font-size:.8rem;color:var(--muted)}
+.face .lang{position:absolute;top:14px;left:18px;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.rates{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.rate{min-height:64px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-weight:600;font-size:.88rem;background:var(--surface);border:1px solid var(--line);border-bottom:4px solid var(--c)}
+.rate small{font-weight:500;font-size:.7rem;color:var(--muted)}
+.rate:disabled{opacity:.35}
+.result{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
+.result div{padding:12px 4px;border-radius:12px;background:var(--surface);border:1px solid var(--line);border-bottom:4px solid var(--c);font-size:.75rem;color:var(--muted)}
+.result b{display:block;font-family:var(--display);font-size:1.5rem;color:var(--ink)}
+.kbd{font-size:.75rem;color:var(--muted);text-align:center}
+@media (hover:none){.kbd{display:none}}
+@media (prefers-reduced-motion:reduce){.card,.progress span{transition:none}}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header class="top">
+    <button class="back" id="back" hidden>‹ Zurück</button>
+    <h1 id="title">Ripasso</h1>
+    <span class="sync" id="sync">auf diesem Gerät</span>
+  </header>
+  <main id="view" class="stack"></main>
+</div>
+
+<script>
+(() => {
+const DAY = 86400000;
+const INTERVALS = [0, 1, 2, 4, 8, 16, 32]; // days until next review, per box
+const LEVELS = [
+  { name: "Neu",       color: "var(--l0)" },
+  { name: "Unsicher",  color: "var(--l1)" },
+  { name: "Lernend",   color: "var(--l2)" },
+  { name: "Gut",       color: "var(--l3)" },
+  { name: "Sicher",    color: "var(--l4)" },
+];
+const RATES = [
+  { name: "Gar nicht", sub: "gleich nochmal", color: "var(--l1)" },
+  { name: "Schwer",    sub: "morgen",         color: "var(--l2)" },
+  { name: "Gewusst",   sub: "später",         color: "var(--l3)" },
+  { name: "Leicht",    sub: "viel später",    color: "var(--l4)" },
+];
+const SAMPLE = "Deutschland,la Germania\nItalien,l'Italia\nFrankreich,la Francia\nÖsterreich,l'Austria\nSchweiz,la Svizzera\nSpanien,la Spagna\nWissenschaft,la scienza\nNationalität,la nazionalità\nLand,il Paese\ndeutsch; Deutsche/r,tedesco/-a";
+
+const S = { decks: new Map(), view: "home", deckId: null, session: null, levelSel: new Set(), armed: null, mode: "local" };
+const $view = document.getElementById("view");
+const $title = document.getElementById("title");
+const $back = document.getElementById("back");
+const $sync = document.getElementById("sync");
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const level = c => !c.box ? 0 : c.box === 1 ? 1 : c.box === 2 ? 2 : c.box <= 4 ? 3 : 4;
+const isDue = (c, now) => !c.box || (c.due || 0) <= now;
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const sortedDecks = () => [...S.decks.entries()].sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+
+/* ---------- storage: localStorage cache always, cloud db when signed in ---------- */
+const LS = "ripasso.v1", LS_SEEN = "ripasso.cloudSeen";
+function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+function lsSave() { lsSet(LS, JSON.stringify(Object.fromEntries(S.decks))); }
+try { S.decks = new Map(Object.entries(JSON.parse(lsGet(LS) || "{}"))); } catch { S.decks = new Map(); }
+
+let col = null;
+const pending = new Set(), inflight = new Set();
+function setSync(text, err) { $sync.textContent = text; $sync.classList.toggle("err", !!err); }
+function saveDeck(id) {
+  lsSave();
+  if (!col) return;
+  pending.add(id);
+  flush(id);
+}
+async function flush(id) {
+  if (inflight.has(id)) return;
+  inflight.add(id);
+  try {
+    while (pending.has(id)) {
+      pending.delete(id);
+      const d = S.decks.get(id);
+      try {
+        if (d) await col.doc(id).set(structuredClone(d)); else await col.doc(id).delete();
+        setSync("synchronisiert");
+      } catch (e) {
+        setSync("Speichern fehlgeschlagen", true);
+        console.warn(e);
+      }
+    }
+  } finally { inflight.delete(id); }
+}
+
+async function connect() {
+  if (!window.claude || !window.claude.use) { setSync("nur auf diesem Gerät"); return; }
+  setSync("verbinde …");
+  const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+  const me = user ? await user.id() : null;
+  if (!db || !me) { setSync("nur auf diesem Gerät"); return; }
+  col = db.collection("data/users/" + me);
+  S.mode = "cloud";
+  let first = true;
+  const timer = setTimeout(() => setSync("keine Verbindung, lokale Kopie", true), 10000);
+  col.onSnapshot(snap => {
+    if (!snap.metadata || !snap.metadata.fromCache) { clearTimeout(timer); setSync("synchronisiert"); }
+    const next = new Map();
+    (snap.docs || []).forEach(d => { const v = d.data(); if (v) next.set(d.id, structuredClone(v)); });
+    for (const id of new Set([...pending, ...inflight])) {
+      if (S.decks.has(id)) next.set(id, S.decks.get(id)); else next.delete(id);
+    }
+    if (first && !(snap.metadata && snap.metadata.fromCache)) {
+      first = false;
+      if (next.size === 0 && S.decks.size > 0 && !lsGet(LS_SEEN)) {
+        // first time on the cloud: upload what this device already had
+        for (const [id, d] of S.decks) next.set(id, d);
+        S.decks = next;
+        for (const id of next.keys()) saveDeck(id);
+      }
+      lsSet(LS_SEEN, "1");
+    }
+    S.decks = next;
+    lsSave();
+    if (S.view === "deck" && !S.decks.has(S.deckId)) S.view = "home";
+    if (S.view === "home" || S.view === "deck") render();
+  }, err => { clearTimeout(timer); setSync("Sync-Fehler, lokal gespeichert", true); console.warn(err); });
+}
+
+/* ---------- parsing ---------- */
+function parse(text, swap) {
+  let ok = [], bad = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    const l = raw.trim();
+    if (!l) continue;
+    let i = l.indexOf("\t");
+    if (i < 0) i = l.indexOf(",");
+    const a = i < 0 ? "" : l.slice(0, i).trim(), b = i < 0 ? "" : l.slice(i + 1).trim();
+    if (!a || !b) { bad++; continue; }
+    ok.push(swap ? [b, a] : [a, b]);
+  }
+  return { ok, bad };
+}
+
+/* ---------- views ---------- */
+function levelCounts(d) { const n = [0, 0, 0, 0, 0]; d.cards.forEach(c => n[level(c)]++); return n; }
+function barHTML(n, total) {
+  if (!total) return '<div class="bar"></div>';
+  return '<div class="bar">' + n.map((v, i) => v ? `<span style="width:${(v / total) * 100}%;background:${LEVELS[i].color}"></span>` : "").join("") + "</div>";
+}
+
+function viewHome() {
+  $title.textContent = "Ripasso"; $back.hidden = true;
+  const decks = sortedDecks();
+  const now = Date.now();
+  if (!decks.length) {
+    return `<div class="empty">
+      <h2>Noch keine Stapel</h2>
+      <p class="muted">Füge deine Vokabeln als Liste ein, eine Karte pro Zeile: <b>Vorderseite,Rückseite</b>. Oder lade erst den Beispielstapel mit 10 Karten.</p>
+      <div class="row" style="width:100%"><button class="btn" data-act="sample">Beispiel laden</button><button class="btn primary" data-act="new">Neuer Stapel</button></div>
+      <button class="btn" data-act="backup">Backup laden</button>
+    </div>`;
+  }
+  return decks.map(([id, d]) => {
+    const n = levelCounts(d), due = d.cards.filter(c => isDue(c, now)).length;
+    return `<button class="deck" data-act="open" data-id="${id}">
+      <h2>${esc(d.name)}</h2>
+      ${barHTML(n, d.cards.length)}
+      <div class="meta"><span>${d.cards.length} Karten · ${n[4]} sicher</span>${due ? `<span class="due">${due} fällig</span>` : "<span>alles erledigt</span>"}</div>
+    </button>`;
+  }).join("") + `<button class="btn primary block" data-act="new">Neuer Stapel</button><button class="btn block" data-act="backup">Backup &amp; Übertragen</button>`;
+}
+
+function viewDeck() {
+  const d = S.decks.get(S.deckId);
+  $title.textContent = d.name; $back.hidden = false;
+  const now = Date.now(), n = levelCounts(d), due = d.cards.filter(c => isDue(c, now)).length;
+  const selCount = d.cards.filter(c => S.levelSel.has(level(c))).length;
+  const front = d.reverse ? "Rückseite" : "Vorderseite";
+  return `
+    <div class="stack">
+      ${barHTML(n, d.cards.length)}
+      <div class="legend">${LEVELS.map((L, i) => `<button class="chip" data-act="lvl" data-l="${i}" aria-pressed="${S.levelSel.has(i)}"><i style="background:${L.color}"></i><b>${n[i]}</b>${L.name}</button>`).join("")}</div>
+      <p class="preview" style="margin:0">Tippe auf Stufen, um nur diese Karten zu lernen.</p>
+    </div>
+    <div class="stack">
+      <button class="btn primary block" data-act="study" data-mode="due" ${due ? "" : "disabled"}>Fällige lernen (${due})</button>
+      <div class="row">
+        <button class="btn" data-act="study" data-mode="levels" ${selCount ? "" : "disabled"}>Auswahl (${selCount})</button>
+        <button class="btn" data-act="study" data-mode="all" ${d.cards.length ? "" : "disabled"}>Alle (${d.cards.length})</button>
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="rev" data-act="rev" ${d.reverse ? "checked" : ""}> Richtung umdrehen (zuerst die rechte Spalte zeigen)</label>
+    <div class="stack">
+      <div class="label">Karten · zuerst gezeigt: ${front}</div>
+      <div class="list">${d.cards.map(c => {
+        const a = d.reverse ? c.b : c.f, b = d.reverse ? c.f : c.b, armed = S.armed === c.id;
+        return `<div class="item"><span class="dot" style="background:${LEVELS[level(c)].color}"></span><div class="txt">${esc(a)}<small>${esc(b)}</small></div><button class="x ${armed ? "armed" : ""}" data-act="delcard" data-id="${c.id}" aria-label="Karte löschen">${armed ? "Löschen?" : "×"}</button></div>`;
+      }).join("") || '<div class="item"><span></span><div class="txt muted">Keine Karten.</div><span></span></div>'}</div>
+    </div>
+    <div class="row">
+      <button class="btn" data-act="add">Karten hinzufügen</button>
+      <button class="btn" data-act="rename">Umbenennen</button>
+    </div>
+    <div class="row">
+      <button class="btn ${S.armed === "reset" ? "danger" : ""}" data-act="reset">${S.armed === "reset" ? "Wirklich zurücksetzen?" : "Fortschritt zurücksetzen"}</button>
+      <button class="btn danger" data-act="deldeck">${S.armed === "deck" ? "Wirklich löschen?" : "Stapel löschen"}</button>
+    </div>`;
+}
+
+function viewImport() {
+  const adding = S.view === "add", d = adding ? S.decks.get(S.deckId) : null;
+  $title.textContent = adding ? "Karten hinzufügen" : (S.view === "rename" ? "Umbenennen" : "Neuer Stapel"); $back.hidden = false;
+  if (S.view === "rename") {
+    return `<label class="label" for="name">Name</label><input type="text" id="name" value="${esc(S.decks.get(S.deckId).name)}" maxlength="80">
+      <button class="btn primary block" data-act="saveName">Speichern</button>`;
+  }
+  return `
+    ${adding ? `<p class="muted" style="margin:0">Neue Karten für <b>${esc(d.name)}</b>.</p>` : `<label class="label" for="name">Name des Stapels</label><input type="text" id="name" placeholder="z. B. Lektion 1" maxlength="80">`}
+    <label class="label" for="txt">Karten, eine pro Zeile</label>
+    <textarea id="txt" placeholder="Deutschland,la Germania&#10;Italien,l'Italia" spellcheck="false" autocapitalize="off"></textarea>
+    <label class="check"><input type="checkbox" id="swap"> Seiten tauschen (rechte Spalte wird Vorderseite)</label>
+    <div class="preview" id="pv">Format: Vorderseite,Rückseite. Getrennt wird beim ersten Komma oder Tab.</div>
+    <button class="btn primary block" data-act="${adding ? "saveAdd" : "saveNew"}">Speichern</button>`;
+}
+
+function viewStudy() {
+  const s = S.session, d = S.decks.get(s.deckId);
+  $title.textContent = d.name; $back.hidden = false;
+  if (!s.queue.length) {
+    return `<div class="empty"><h2>Runde geschafft</h2><p class="muted">${s.answered} Antworten in dieser Runde.</p></div>
+      <div class="result">${RATES.map((R, i) => `<div style="--c:${R.color}"><b>${s.tally[i]}</b>${R.name}</div>`).join("")}</div>
+      <button class="btn primary block" data-act="toDeck">Zurück zum Stapel</button>`;
+  }
+  const c = d.cards.find(x => x.id === s.queue[0]);
+  if (!c) { s.queue.shift(); return viewStudy(); }
+  const a = d.reverse ? c.b : c.f, b = d.reverse ? c.f : c.b;
+  const done = s.total - s.queue.length, pct = s.total ? (done / s.total) * 100 : 0;
+  return `
+    <div class="stack" style="gap:6px">
+      <div class="progress"><span style="width:${pct}%"></span></div>
+      <div class="count"><span>${done} / ${s.total}</span><span>Stufe: ${LEVELS[level(c)].name}</span></div>
+    </div>
+    <div class="scene"><button class="card ${s.flipped ? "flipped" : ""}" data-act="flip" aria-label="Karte umdrehen">
+      <div class="face front"><span class="lang">Frage</span><div class="word">${esc(a)}</div><div class="hint">Tippen zum Umdrehen</div></div>
+      <div class="face back"><span class="lang">Antwort</span><div class="word">${esc(b)}</div><div class="hint">${esc(a)}</div></div>
+    </button></div>
+    <div class="rates">${RATES.map((R, i) => `<button class="rate" style="--c:${R.color}" data-act="rate" data-r="${i}">${R.name}<small>${R.sub}</small></button>`).join("")}</div>
+    <div class="kbd">Leertaste: umdrehen · 1–4: bewerten</div>`;
+}
+
+function viewBackup() {
+  $title.textContent = "Backup"; $back.hidden = false;
+  return `<p class="muted" style="margin:0">Deine Karten und dein Fortschritt liegen nur auf diesem Gerät. Mit einem Backup kannst du sie sichern oder auf ein anderes Gerät übertragen.</p>
+    <div class="row"><button class="btn primary" data-act="bkCopy" ${S.decks.size ? "" : "disabled"}>Backup kopieren</button><button class="btn" data-act="bkFile" ${S.decks.size ? "" : "disabled"}>Als Datei speichern</button></div>
+    <label class="label" for="bk">Backup einfügen</label>
+    <textarea id="bk" placeholder="Backup-Text hier einfügen" spellcheck="false" autocapitalize="off"></textarea>
+    <label class="check"><input type="checkbox" id="bkReplace"> Vorhandene Stapel ersetzen (sonst werden sie ergänzt)</label>
+    <div class="preview" id="bkMsg"></div>
+    <button class="btn block" data-act="bkLoad">Backup laden</button>`;
+}
+
+function render() {
+  if ((S.view === "deck" || S.view === "add" || S.view === "rename") && !S.decks.has(S.deckId)) S.view = "home";
+  if (S.view === "study" && (!S.session || !S.decks.has(S.session.deckId))) S.view = "home";
+  $view.innerHTML = S.view === "home" ? viewHome() : S.view === "deck" ? viewDeck() : S.view === "study" ? viewStudy() : S.view === "backup" ? viewBackup() : viewImport();
+  const txt = document.getElementById("txt");
+  if (txt) {
+    const upd = () => { const p = parse(txt.value, document.getElementById("swap").checked); document.getElementById("pv").textContent = txt.value.trim() ? `${p.ok.length} Karten erkannt` + (p.bad ? `, ${p.bad} Zeilen ohne Komma oder Tab werden übersprungen` : "") + (p.ok[0] ? `. Erste Karte: ${p.ok[0][0]} → ${p.ok[0][1]}` : "") : "Format: Vorderseite,Rückseite. Getrennt wird beim ersten Komma oder Tab."; };
+    txt.addEventListener("input", upd); document.getElementById("swap").addEventListener("change", upd);
+  }
+}
+
+function go(view, deckId) { S.view = view; if (deckId !== undefined) S.deckId = deckId; S.armed = null; render(); window.scrollTo(0, 0); }
+
+function createDeck(name, pairs) {
+  const id = uid();
+  S.decks.set(id, { name: name || "Neuer Stapel", createdAt: Date.now(), reverse: false, cards: pairs.map(([f, b]) => ({ id: uid(), f, b, box: 0, due: 0 })) });
+  saveDeck(id);
+  return id;
+}
+
+function startStudy(mode) {
+  const d = S.decks.get(S.deckId), now = Date.now();
+  let cards = d.cards;
+  if (mode === "due") cards = cards.filter(c => isDue(c, now));
+  else if (mode === "levels") cards = cards.filter(c => S.levelSel.has(level(c)));
+  if (!cards.length) return;
+  const queue = shuffle(cards.map(c => c.id));
+  S.session = { deckId: S.deckId, queue, total: queue.length, flipped: false, tally: [0, 0, 0, 0], answered: 0 };
+  go("study");
+}
+
+function rate(r) {
+  const s = S.session, d = S.decks.get(s.deckId);
+  const c = d.cards.find(x => x.id === s.queue[0]);
+  s.queue.shift();
+  if (c) {
+    const now = Date.now();
+    if (r === 0) { c.box = 1; c.due = now; s.queue.splice(Math.min(s.queue.length, 3), 0, c.id); s.total++; }
+    else if (r === 1) { c.box = Math.max(1, (c.box || 1) - 1); c.due = now + DAY; }
+    else { c.box = Math.min(6, (c.box || 0) + (r === 3 ? 2 : 1)); c.due = now + INTERVALS[c.box] * DAY; }
+    s.tally[r]++; s.answered++;
+    saveDeck(s.deckId);
+  }
+  s.flipped = false;
+  render();
+}
+
+/* ---------- events ---------- */
+$back.addEventListener("click", () => {
+  if (S.view === "deck" || S.view === "new" || S.view === "backup") go("home");
+  else go("deck");
+});
+
+$view.addEventListener("click", e => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act, d = S.decks.get(S.deckId);
+  switch (act) {
+    case "sample": go("deck", createDeck("Beispiel: Länder", parse(SAMPLE).ok)); break;
+    case "new": go("new"); break;
+    case "backup": go("backup"); break;
+    case "bkCopy": {
+      const txt = JSON.stringify({ app: "ripasso", v: 1, decks: Object.fromEntries(S.decks) });
+      const msg = document.getElementById("bkMsg");
+      navigator.clipboard.writeText(txt).then(() => { msg.textContent = "Kopiert. Füge es auf dem anderen Gerät ein, z. B. per Notiz oder Nachricht an dich selbst."; },
+        () => { const bk = document.getElementById("bk"); bk.value = txt; bk.select(); msg.textContent = "Kopieren nicht erlaubt. Der Text steht im Feld oben und ist markiert."; });
+      break;
+    }
+    case "bkFile": {
+      const blob = new Blob([JSON.stringify({ app: "ripasso", v: 1, decks: Object.fromEntries(S.decks) })], { type: "application/json" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "ripasso-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      break;
+    }
+    case "bkLoad": {
+      const msg = document.getElementById("bkMsg");
+      try {
+        const data = JSON.parse(document.getElementById("bk").value);
+        if (!data || (data.app !== "ripasso" && data.app !== "lessico") || typeof data.decks !== "object") throw 0;
+        if (document.getElementById("bkReplace").checked) S.decks = new Map();
+        let n = 0;
+        for (const [id, dk] of Object.entries(data.decks)) { if (dk && Array.isArray(dk.cards)) { S.decks.set(id, dk); n++; } }
+        lsSave(); msg.textContent = n + " Stapel geladen."; setTimeout(() => go("home"), 700);
+      } catch { msg.textContent = "Das ist kein gültiges Ripasso-Backup."; }
+      break;
+    }
+    case "open": S.levelSel = new Set(); go("deck", el.dataset.id); break;
+    case "lvl": { const l = +el.dataset.l; S.levelSel.has(l) ? S.levelSel.delete(l) : S.levelSel.add(l); render(); break; }
+    case "study": startStudy(el.dataset.mode); break;
+    case "rev": d.reverse = el.checked; saveDeck(S.deckId); render(); break;
+    case "add": go("add"); break;
+    case "rename": go("rename"); break;
+    case "toDeck": go("deck"); break;
+    case "flip": S.session.flipped = !S.session.flipped; el.classList.toggle("flipped", S.session.flipped); break;
+    case "rate": rate(+el.dataset.r); break;
+    case "delcard": {
+      const id = el.dataset.id;
+      if (S.armed !== id) { S.armed = id; render(); break; }
+      d.cards = d.cards.filter(c => c.id !== id); S.armed = null; saveDeck(S.deckId); render(); break;
+    }
+    case "reset":
+      if (S.armed !== "reset") { S.armed = "reset"; render(); break; }
+      d.cards.forEach(c => { c.box = 0; c.due = 0; }); S.armed = null; saveDeck(S.deckId); render(); break;
+    case "deldeck":
+      if (S.armed !== "deck") { S.armed = "deck"; render(); break; }
+      S.decks.delete(S.deckId); saveDeck(S.deckId); go("home"); break;
+    case "saveName": {
+      const v = document.getElementById("name").value.trim();
+      if (v) { d.name = v; saveDeck(S.deckId); }
+      go("deck"); break;
+    }
+    case "saveNew": case "saveAdd": {
+      const p = parse(document.getElementById("txt").value, document.getElementById("swap").checked);
+      if (!p.ok.length) { document.getElementById("pv").textContent = "Keine Karten erkannt. Jede Zeile braucht ein Komma oder Tab zwischen Vorder- und Rückseite."; break; }
+      if (act === "saveNew") go("deck", createDeck(document.getElementById("name").value.trim(), p.ok));
+      else { p.ok.forEach(([f, b]) => d.cards.push({ id: uid(), f, b, box: 0, due: 0 })); saveDeck(S.deckId); go("deck"); }
+      break;
+    }
+  }
+  if (act !== "delcard" && act !== "reset" && act !== "deldeck" && S.armed && S.view === "deck") { S.armed = null; }
+});
+
+document.addEventListener("keydown", e => {
+  if (S.view !== "study" || !S.session || !S.session.queue.length) return;
+  if (e.target.matches && e.target.matches("input,textarea")) return;
+  if (e.key === " " || e.key === "Enter") {
+    e.preventDefault();
+    S.session.flipped = !S.session.flipped;
+    const card = document.querySelector(".card");
+    if (card) card.classList.toggle("flipped", S.session.flipped);
+  } else if (/^[1-4]$/.test(e.key)) rate(+e.key - 1);
+});
+
+render();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(e => console.warn(e));
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+})();
+</script>
+</body>
+</html>
