@@ -144,7 +144,7 @@ textarea{min-height:220px;font-size:.95rem;resize:vertical}
 
 <script>
 (() => {
-const VERSION = "4";
+const VERSION = "5";
 const DAY = 86400000;
 const INTERVALS = [0, 1, 2, 4, 8, 16, 32]; // days until next review, per box
 const LEVELS = [
@@ -175,73 +175,144 @@ const isDue = (c, now) => !c.box || (c.due || 0) <= now;
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const sortedDecks = () => [...S.decks.entries()].sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
 
-/* ---------- storage: localStorage cache always, cloud db when signed in ---------- */
-const LS = "ripasso.v1", LS_SEEN = "ripasso.cloudSeen";
+/* ---------- storage: this device first, GitHub Gist sync on top ---------- */
+const LS = "ripasso.v1", LS_DEL = "ripasso.deletedDecks", LS_SYNC = "ripasso.sync";
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
-function lsSave() { lsSet(LS, JSON.stringify(Object.fromEntries(S.decks))); }
+function lsDel(k) { try { localStorage.removeItem(k); } catch {} }
+function lsSave() { lsSet(LS, JSON.stringify(Object.fromEntries(S.decks))); lsSet(LS_DEL, JSON.stringify(S.deletedDecks)); }
 try { S.decks = new Map(Object.entries(JSON.parse(lsGet(LS) || "{}"))); } catch { S.decks = new Map(); }
-
-let col = null;
-const pending = new Set(), inflight = new Set();
+try { S.deletedDecks = JSON.parse(lsGet(LS_DEL) || "{}"); } catch { S.deletedDecks = {}; }
 function setSync(text, err) { $sync.textContent = text; $sync.classList.toggle("err", !!err); }
-function saveDeck(id) {
-  lsSave();
-  if (!col) return;
-  pending.add(id);
-  flush(id);
+
+/* Change tracking: saveDeck() compares each card with how it looked at the last save and stamps
+   what changed with a time `t`. Deleted cards and stacks leave a dated tombstone. The merge
+   between devices then keeps the newest version of every single card. */
+const cardKey = c => JSON.stringify([c.f, c.b, c.box || 0, c.due || 0, !!c.hidden]);
+const metaKey = d => JSON.stringify([d.name, !!d.reverse]);
+let shadow = new Map();
+function resetShadow() {
+  shadow = new Map([...S.decks].map(([id, d]) => [id, { meta: metaKey(d), cards: new Map(d.cards.map(c => [c.id, cardKey(c)])) }]));
 }
-async function flush(id) {
-  if (inflight.has(id)) return;
-  inflight.add(id);
-  try {
-    while (pending.has(id)) {
-      pending.delete(id);
-      const d = S.decks.get(id);
-      try {
-        if (d) await col.doc(id).set(structuredClone(d)); else await col.doc(id).delete();
-        setSync("synchronisiert");
-      } catch (e) {
-        setSync("Speichern fehlgeschlagen", true);
-        console.warn(e);
-      }
+resetShadow();
+function stamp(id) {
+  const d = S.decks.get(id), sh = shadow.get(id), now = Date.now();
+  if (!d) { if (sh) S.deletedDecks[id] = now; shadow.delete(id); return; }
+  if (!sh || sh.meta !== metaKey(d)) d.t = now;
+  const seen = new Set();
+  for (const c of d.cards) {
+    seen.add(c.id);
+    if (!sh || sh.cards.get(c.id) !== cardKey(c)) c.t = now;
+  }
+  if (sh) for (const cid of sh.cards.keys()) if (!seen.has(cid)) (d.deleted ||= {})[cid] = now;
+  shadow.set(id, { meta: metaKey(d), cards: new Map(d.cards.map(c => [c.id, cardKey(c)])) });
+}
+function saveDeck(id) { stamp(id); lsSave(); syncSoon(); }
+
+/* Merge two copies (this device + gist). Same result on every device, whatever the order. */
+const newer = (a, b, ta, tb) => ta !== tb ? (ta > tb ? a : b) : (JSON.stringify(a) >= JSON.stringify(b) ? a : b);
+function mergeData(loc, rem) {
+  const tomb = { ...(loc.deletedDecks || {}) };
+  for (const [k, v] of Object.entries(rem.deletedDecks || {})) tomb[k] = Math.max(tomb[k] || 0, v);
+  const decks = {};
+  for (const id of new Set([...Object.keys(loc.decks || {}), ...Object.keys(rem.decks || {})])) {
+    const L = (loc.decks || {})[id], R = (rem.decks || {})[id];
+    const base = L && R ? newer(L, R, L.t || 0, R.t || 0) : (L || R);
+    const deleted = { ...(L?.deleted || {}) };
+    for (const [k, v] of Object.entries(R?.deleted || {})) deleted[k] = Math.max(deleted[k] || 0, v);
+    const cards = new Map();
+    for (const c of [...(L?.cards || []), ...(R?.cards || [])]) {
+      const x = cards.get(c.id);
+      cards.set(c.id, x ? newer(x, c, x.t || 0, c.t || 0) : c);
     }
-  } finally { inflight.delete(id); }
+    const list = [...cards.values()].filter(c => !(deleted[c.id] >= (c.t || 0)));
+    const lastChange = Math.max(base.t || 0, base.createdAt || 0, ...list.map(c => c.t || 0));
+    if (tomb[id] && tomb[id] >= lastChange) continue;
+    delete tomb[id];
+    decks[id] = { ...base, cards: list, deleted };
+  }
+  return { decks, deletedDecks: tomb };
 }
 
-async function connect() {
-  if (!window.claude || !window.claude.use) { setSync("nur auf diesem Gerät"); return; }
-  setSync("verbinde …");
-  const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
-  const me = user ? await user.id() : null;
-  if (!db || !me) { setSync("nur auf diesem Gerät"); return; }
-  col = db.collection("data/users/" + me);
-  S.mode = "cloud";
-  let first = true;
-  const timer = setTimeout(() => setSync("keine Verbindung, lokale Kopie", true), 10000);
-  col.onSnapshot(snap => {
-    if (!snap.metadata || !snap.metadata.fromCache) { clearTimeout(timer); setSync("synchronisiert"); }
-    const next = new Map();
-    (snap.docs || []).forEach(d => { const v = d.data(); if (v) next.set(d.id, structuredClone(v)); });
-    for (const id of new Set([...pending, ...inflight])) {
-      if (S.decks.has(id)) next.set(id, S.decks.get(id)); else next.delete(id);
-    }
-    if (first && !(snap.metadata && snap.metadata.fromCache)) {
-      first = false;
-      if (next.size === 0 && S.decks.size > 0 && !lsGet(LS_SEEN)) {
-        // first time on the cloud: upload what this device already had
-        for (const [id, d] of S.decks) next.set(id, d);
-        S.decks = next;
-        for (const id of next.keys()) saveDeck(id);
-      }
-      lsSet(LS_SEEN, "1");
-    }
-    S.decks = next;
-    lsSave();
-    if (S.view === "deck" && !S.decks.has(S.deckId)) S.view = "home";
-    if (S.view === "home" || S.view === "deck") render();
-  }, err => { clearTimeout(timer); setSync("Sync-Fehler, lokal gespeichert", true); console.warn(err); });
+/* GitHub Gist */
+const GIST_FILE = "ripasso-data.json";
+let sync = null;
+try { sync = JSON.parse(lsGet(LS_SYNC) || "null"); } catch {}
+let syncTimer = null, syncing = false, syncAgain = false;
+async function gh(path, opts = {}) {
+  const r = await fetch("https://api.github.com" + path, { cache: "no-store", ...opts,
+    headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + sync.token, ...(opts.body ? { "Content-Type": "application/json" } : {}) } });
+  if (r.status === 401) throw Object.assign(new Error("Token ungültig oder abgelaufen"), { auth: true });
+  if (!r.ok) throw new Error("GitHub antwortet " + r.status);
+  return r.json();
 }
+function payload() { return { app: "ripasso", v: 2, updated: Date.now(), decks: Object.fromEntries(S.decks), deletedDecks: S.deletedDecks }; }
+async function readGist() {
+  const g = await gh("/gists/" + sync.gistId);
+  const f = g.files && g.files[GIST_FILE];
+  if (!f) return { decks: {}, deletedDecks: {} };
+  const text = f.truncated ? await (await fetch(f.raw_url, { cache: "no-store" })).text() : f.content;
+  return JSON.parse(text || "{}");
+}
+async function writeGist() {
+  await gh("/gists/" + sync.gistId, { method: "PATCH", body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(payload()) } } }) });
+}
+function syncSoon(delay = 3000) {
+  if (!sync) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, delay);
+}
+async function syncNow() {
+  if (!sync) return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true;
+  setSync("sync …");
+  try {
+    const remote = await readGist();
+    const merged = mergeData({ decks: Object.fromEntries(S.decks), deletedDecks: S.deletedDecks }, remote);
+    const changedHere = JSON.stringify(merged.decks) !== JSON.stringify(Object.fromEntries(S.decks));
+    S.decks = new Map(Object.entries(merged.decks));
+    S.deletedDecks = merged.deletedDecks;
+    resetShadow();
+    lsSave();
+    if (JSON.stringify(merged) !== JSON.stringify({ decks: remote.decks || {}, deletedDecks: remote.deletedDecks || {} })) await writeGist();
+    sync.last = Date.now();
+    lsSet(LS_SYNC, JSON.stringify(sync));
+    setSync("synchronisiert");
+    if (changedHere && (S.view === "home" || S.view === "deck" || S.view === "backup")) render();
+  } catch (e) {
+    console.warn(e);
+    setSync(e.auth ? "Sync: Token prüfen" : navigator.onLine === false ? "offline, später sync" : "Sync-Fehler", true);
+  } finally {
+    syncing = false;
+    if (syncAgain) { syncAgain = false; syncSoon(500); }
+  }
+}
+async function connectGist(token) {
+  sync = { token };
+  const gists = [];
+  for (let page = 1; page <= 5; page++) {
+    const batch = await gh(`/gists?per_page=100&page=${page}`);
+    gists.push(...batch);
+    if (batch.length < 100) break;
+  }
+  const found = gists.find(g => g.files && g.files[GIST_FILE]);
+  if (found) sync.gistId = found.id;
+  else {
+    const g = await gh("/gists", { method: "POST", body: JSON.stringify({ description: "Ripasso – Karten und Fortschritt (nicht löschen)", public: false, files: { [GIST_FILE]: { content: JSON.stringify(payload()) } } }) });
+    sync.gistId = g.id;
+  }
+  lsSet(LS_SYNC, JSON.stringify(sync));
+  await syncNow();
+  return !!found;
+}
+function disconnectGist() { sync = null; clearTimeout(syncTimer); lsDel(LS_SYNC); setSync("auf diesem Gerät"); }
+document.addEventListener("visibilitychange", () => {
+  if (!sync) return;
+  if (document.visibilityState === "visible") syncSoon(300);
+  else if (syncTimer) { clearTimeout(syncTimer); syncNow(); } // leaving the app: send pending changes now
+});
+window.addEventListener("online", () => syncSoon(500));
 
 /* ---------- parsing ---------- */
 function parse(text, swap) {
@@ -285,7 +356,7 @@ function viewHome() {
       ${barHTML(n, act.length)}
       <div class="meta"><span>${act.length} Karten · ${n[4]} sicher${off ? ` · ${off} ausgeblendet` : ""}</span>${due ? `<span class="due">${due} fällig</span>` : "<span>alles erledigt</span>"}</div>
     </button>`;
-  }).join("") + `<button class="btn primary block" data-act="new">Neuer Stapel</button><button class="btn block" data-act="backup">Backup &amp; Übertragen</button><p class="preview" style="text-align:center;margin:0">Version ${VERSION}</p>`;
+  }).join("") + `<button class="btn primary block" data-act="new">Neuer Stapel</button><button class="btn block" data-act="backup">${sync ? "Sync &amp; Backup" : "Sync &amp; Backup einrichten"}</button><p class="preview" style="text-align:center;margin:0">Version ${VERSION}</p>`;
 }
 
 function viewDeck() {
@@ -376,8 +447,30 @@ function viewStudy() {
 }
 
 function viewBackup() {
-  $title.textContent = "Backup"; $back.hidden = false;
-  return `<p class="muted" style="margin:0">Deine Karten und dein Fortschritt liegen nur auf diesem Gerät. Mit einem Backup kannst du sie sichern oder auf ein anderes Gerät übertragen.</p>
+  $title.textContent = "Sync & Backup"; $back.hidden = false;
+  const when = sync && sync.last ? new Date(sync.last).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : "noch nie";
+  const syncBox = sync ? `
+    <div class="stack">
+      <div class="label">GitHub-Sync</div>
+      <p style="margin:0">Verbunden. Karten und Fortschritt werden automatisch in deinem GitHub gesichert und zwischen deinen Geräten abgeglichen.</p>
+      <p class="preview" style="margin:0">Zuletzt synchronisiert: ${when}</p>
+      <div class="row"><button class="btn primary" data-act="syncNow">Jetzt synchronisieren</button><button class="btn" data-act="syncOff">${S.armed === "syncOff" ? "Wirklich trennen?" : "Trennen"}</button></div>
+    </div>` : `
+    <div class="stack">
+      <div class="label">GitHub-Sync</div>
+      <p style="margin:0">Sichere Karten und Fortschritt automatisch in deinem GitHub-Konto. Auf einem neuen Gerät verbindest du dich einfach wieder und alles ist zurück.</p>
+      <ol class="muted" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
+        <li>Öffne <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Ripasso" target="_blank" rel="noopener">github.com/settings/tokens/new</a> (Häkchen bei <b>gist</b> ist schon gesetzt).</li>
+        <li>Bei „Expiration" am besten <b>No expiration</b> wählen, dann unten auf <b>Generate token</b>.</li>
+        <li>Den Token (beginnt mit <code>ghp_</code>) kopieren und hier einfügen.</li>
+      </ol>
+      <input type="password" id="token" placeholder="ghp_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="preview" id="syncMsg"></div>
+      <button class="btn primary block" data-act="syncOn">Verbinden</button>
+    </div>`;
+  return `${syncBox}
+    <div class="label" style="margin-top:8px">Backup von Hand</div>
+    <p class="muted" style="margin:0">Deine Karten und dein Fortschritt liegen auf diesem Gerät${sync ? " und in deinem GitHub" : ""}. Mit einem Backup kannst du sie zusätzlich sichern oder übertragen.</p>
     <div class="row"><button class="btn primary" data-act="bkCopy" ${S.decks.size ? "" : "disabled"}>Backup kopieren</button><button class="btn" data-act="bkFile" ${S.decks.size ? "" : "disabled"}>Als Datei speichern</button></div>
     <label class="label" for="bk">Backup einfügen</label>
     <textarea id="bk" placeholder="Backup-Text hier einfügen" spellcheck="false" autocapitalize="off"></textarea>
@@ -558,14 +651,33 @@ $view.addEventListener("click", e => {
       try {
         const data = JSON.parse(document.getElementById("bk").value);
         if (!data || (data.app !== "ripasso" && data.app !== "lessico") || typeof data.decks !== "object") throw 0;
+        const before = [...S.decks.keys()];
         if (document.getElementById("bkReplace").checked) S.decks = new Map();
         let n = 0;
-        for (const [id, dk] of Object.entries(data.decks)) { if (dk && Array.isArray(dk.cards)) { S.decks.set(id, dk); n++; } }
-        lsSave(); msg.textContent = n + " Stapel geladen."; setTimeout(() => go("home"), 700);
+        for (const [id, dk] of Object.entries(data.decks)) { if (dk && Array.isArray(dk.cards)) { S.decks.set(id, dk); shadow.delete(id); n++; } }
+        for (const id of new Set([...before, ...S.decks.keys()])) stamp(id);
+        lsSave(); syncSoon(500); msg.textContent = n + " Stapel geladen."; setTimeout(() => go("home"), 700);
       } catch { msg.textContent = "Das ist kein gültiges Ripasso-Backup."; }
       break;
     }
     case "open": S.levelSel = new Set(); go("deck", el.dataset.id); break;
+    case "syncOn": {
+      const token = document.getElementById("token").value.trim(), msg = document.getElementById("syncMsg");
+      if (!token) { msg.textContent = "Bitte zuerst den Token einfügen."; break; }
+      msg.textContent = "Verbinde mit GitHub …"; el.disabled = true;
+      connectGist(token).then(found => {
+        msg.textContent = found ? "Verbunden. Deine gespeicherten Karten wurden geladen." : "Verbunden. Deine Karten sind jetzt in GitHub gesichert.";
+        setTimeout(() => render(), 900);
+      }).catch(e => {
+        sync = null; lsDel(LS_SYNC); el.disabled = false;
+        msg.textContent = e.auth ? "GitHub kennt diesen Token nicht. Prüfe, ob du ihn vollständig kopiert hast." : "Verbindung fehlgeschlagen: " + e.message + ". Bist du online? Hat der Token das Häkchen bei gist?";
+      });
+      break;
+    }
+    case "syncNow": syncNow().then(() => S.view === "backup" && render()); break;
+    case "syncOff":
+      if (S.armed !== "syncOff") { S.armed = "syncOff"; render(); break; }
+      S.armed = null; disconnectGist(); render(); break;
     case "lvl": { const l = +el.dataset.l; S.levelSel.has(l) ? S.levelSel.delete(l) : S.levelSel.add(l); render(); break; }
     case "study": startStudy(el.dataset.mode); break;
     case "rev": d.reverse = el.checked; saveDeck(S.deckId); render(); break;
@@ -621,6 +733,7 @@ document.addEventListener("keydown", e => {
 });
 
 render();
+if (sync) { setSync("sync …"); syncNow(); }
 if ("serviceWorker" in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
