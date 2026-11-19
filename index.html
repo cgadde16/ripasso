@@ -44,6 +44,7 @@ body{font-family:var(--body);font-size:16px;line-height:1.45;-webkit-tap-highlig
 .top h1{font-family:var(--display);font-size:1.6rem;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-wrap:balance}
 .sync{font-size:.75rem;color:var(--muted);letter-spacing:.02em;white-space:nowrap}
 .sync.err{color:var(--l1)}
+.sync.upd{color:var(--accent);font-weight:600;cursor:pointer;text-decoration:underline}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:46px;padding:0 18px;border-radius:12px;font-weight:600;background:var(--surface);border:1px solid var(--line)}
@@ -133,6 +134,7 @@ textarea{min-height:220px;font-size:.95rem;resize:vertical}
 
 <script>
 (() => {
+const VERSION = "3";
 const DAY = 86400000;
 const INTERVALS = [0, 1, 2, 4, 8, 16, 32]; // days until next review, per box
 const LEVELS = [
@@ -272,7 +274,7 @@ function viewHome() {
       ${barHTML(n, d.cards.length)}
       <div class="meta"><span>${d.cards.length} Karten · ${n[4]} sicher</span>${due ? `<span class="due">${due} fällig</span>` : "<span>alles erledigt</span>"}</div>
     </button>`;
-  }).join("") + `<button class="btn primary block" data-act="new">Neuer Stapel</button><button class="btn block" data-act="backup">Backup &amp; Übertragen</button>`;
+  }).join("") + `<button class="btn primary block" data-act="new">Neuer Stapel</button><button class="btn block" data-act="backup">Backup &amp; Übertragen</button><p class="preview" style="text-align:center;margin:0">Version ${VERSION}</p>`;
 }
 
 function viewDeck() {
@@ -580,7 +582,22 @@ document.addEventListener("keydown", e => {
 });
 
 render();
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(e => console.warn(e));
+if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+    // an iPhone home-screen app resumes instead of reloading, so check for updates whenever it comes back
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+  }).catch(e => console.warn(e));
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloading) return;
+    if (S.view === "home" || S.view === "deck") { reloading = true; location.reload(); return; }
+    // don't interrupt a study round or a half-typed list: offer the reload instead
+    $sync.textContent = "Update bereit – tippen";
+    $sync.classList.add("upd");
+    $sync.onclick = () => location.reload();
+  });
+}
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 })();
 </script>
